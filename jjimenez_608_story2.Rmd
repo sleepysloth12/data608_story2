@@ -1,0 +1,571 @@
+---
+title: "Data 608 Story 2"
+author: "Jean Jimenez"
+date: "2024-02-13"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# FED Inflation and Unemployment
+
+## Introduction
+
+The Federal Reserve (or the Fed), plays an important role in the United States economy. Established by Congress, its dual mandate is controlling inflation and making sure unemployment is low.
+
+The Consumer Price Index (CPI) is a indicator of inflation. It reflects the changes in the cost of goods and servicess.
+
+The Fed Funds Rate is an important tool that influences the economy and policy. It changes in response to things happening in the economy.
+
+Unemployment rate is the rate of unemployed individuals.
+
+The purpose of this assignment is to determine if the FED has able to fulfill their mandate imposed by congress.
+
+## Data
+
+### Importing Data
+
+ALL data was imported using API.
+
+#### CPI Data
+
+First, I imported the CPI data from the [Bureau of Labor Statistics (BLS)](bls.gov).
+
+I created an account and obtained an API key from the BLS website.
+
+For this request (and the one for unemployment data), I used `blsAPI` package because it was recommended by the platform. I obtained the series ID for the CPI data I wanted from the website and constructed the query to send to the site.
+
+The website only limited me to obtaining data from the past 20 years so I had to create 2 different queries to encompass the full span of time. After data was retrieved in JSON format, it was parsed, joined, and placed into a data frame.
+
+```{r}
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(blsAPI)
+library(tidyr)
+library(purrr)
+library(stringr)
+library(ggplot2)
+
+#cpi data
+bls_api_key = "cfcef8a6f633445ca98ff317450779a4"
+
+# CPI series ID and years
+
+cpi_series_id = "CUUR0000SA0"
+start_year = format(as.Date(Sys.Date()) - years(25), "%Y")
+end_year = format(Sys.Date(), "%Y")
+
+
+cpi_request = list(
+  "seriesid" = cpi_series_id,
+  "startyear" = start_year,
+  "endyear" = end_year,
+  "registrationkey" = bls_api_key
+)
+
+#blsAPI
+
+cpi_raw = blsAPI(cpi_request)
+
+
+cpi_parsed = fromJSON(cpi_raw)
+
+
+cpi_series = cpi_parsed$Results$series
+
+
+if("data" %in% names(cpi_series)) {
+  cpi_data = cpi_series$data[[1]]
+  
+  if(is.list(cpi_data)) {
+    cpi_data_df = do.call(rbind, cpi_data)
+  } else {
+    cpi_data_df = cpi_data
+  }
+  
+  
+  #str(cpi_data_df)
+  #head(cpi_data_df)
+} 
+
+
+
+
+
+years = c()
+periods = c()
+periodNames = c()
+values = c()
+
+
+for (i in seq(1, length(cpi_data), by = 5)) {
+  years = c(years, cpi_data[[i]])
+  periods = c(periods, cpi_data[[i+1]])
+  periodNames = c(periodNames, cpi_data[[i+2]])
+  values = c(values, as.numeric(cpi_data[[i+3]]))
+}
+
+
+cpi_df = data.frame(year = years, period = periods, periodName = periodNames, value = values)
+
+
+#head(cpi_df)
+
+
+cpi_request2 = list(
+  "seriesid" = cpi_series_id,
+  "startyear" = "1998",
+  "endyear" = "2005",
+  "registrationkey" = bls_api_key
+)
+
+cpi_raw2 = blsAPI(cpi_request2)
+
+
+cpi_parsed2 = fromJSON(cpi_raw2)
+
+
+cpi_series2 = cpi_parsed2$Results$series
+
+
+if("data" %in% names(cpi_series2)) {
+  cpi_data2 = cpi_series2$data[[1]]
+  
+  if(is.list(cpi_data2)) {
+    cpi_data_df2 = do.call(rbind, cpi_data2)
+  } else {
+    cpi_data_df2 = cpi_data2
+  }
+  
+  
+  
+  #str(cpi_data_df2)
+  #head(cpi_data_df2)
+} 
+
+
+
+
+years = c()
+periods = c()
+periodNames = c()
+values = c()
+
+
+for (i in seq(1, length(cpi_data2), by = 5)) {
+  years = c(years, cpi_data2[[i]])
+  periods = c(periods, cpi_data2[[i+1]])
+  periodNames = c(periodNames, cpi_data2[[i+2]])
+  values = c(values, as.numeric(cpi_data2[[i+3]]))
+}
+
+
+cpi_df2 = data.frame(year = years, period = periods, periodName = periodNames, value = values)
+
+
+#head(cpi_df2)
+```
+
+#### FED Data
+
+FED data was obtained from the Federal Reserve Economic Data (FRED) which was accessed through the R-package `fredr`. I obtained an API key to access the FRED database and constructed a query to specify I wanted the FEDFUNDS data for the past 25 years.
+
+```{r}
+#FED Data
+
+library(fredr)
+
+fredr_set_key("ccde0d48bfadc9c91c0f2ab58e2223c9")
+
+
+fed_funds_rate = fredr(series_id = "FEDFUNDS",
+                        observation_start = as.Date("1998-01-01"),
+                        observation_end = as.Date(paste0(format(Sys.Date(), "%Y"), "-12-31")))
+
+```
+
+#### Unemployment Data
+
+I also imported the Unemployment data from the [Bureau of Labor Statistics (BLS)](bls.gov).
+
+Using the same API key but the series id of the unemployment data, I again used `blsAPI` package.
+
+The website again only limited me to obtaining data from the past 20 years so I had to create 2 different queries to encompass the full span of time. After data was retrieved in JSON format, it was parsed, joined, and placed into a data frame.
+
+```{r}
+#Unemployment data
+
+
+api_key = "cfcef8a6f633445ca98ff317450779a4"  
+series_id = "LNS14000000"
+
+
+request2 = list(
+  "seriesid" = series_id,
+  "startyear" = "2005",
+  "endyear" = "2024",
+  "registrationkey" = api_key
+)
+
+uep_raw = blsAPI(request2)
+parsed_data = fromJSON(uep_raw)
+series_df = parsed_data$Results$series$data
+
+
+request3 = list(
+  "seriesid" = series_id,
+  "startyear" = "1998",
+  "endyear" = "2005",
+  "registrationkey" = api_key
+)
+
+uep_raw2 = blsAPI(request3)
+parsed_data2 = fromJSON(uep_raw2)
+series_df2 = parsed_data2$Results$series$data
+
+```
+
+### Cleaning Data
+
+After importing all data, I started to combine them into one data frame. Both CPI data and Unemployment data had Year and Period columns so I used those to join both of them together.
+
+To add the FED data to both CPI and Unemployment data frame, I had to process the date column to extract the year and month and create new columns with year and period information.
+
+```{r}
+#Joining CPI DAta 1 and 2; uap data
+
+cpi_data_br=bind_rows(cpi_df2,cpi_df)
+
+#unique(cpi_data_br$year)
+
+uep_data_br=bind_rows(series_df2,series_df)
+
+#names(uep_data_br)
+
+#Cleaning cpi
+
+cpir= cpi_data_br %>%
+  select(year,period, value)
+
+names(cpir)=c("year","period","cpi_value")
+#unique(cpir$year)
+
+#cleaning uinemployment
+
+uepr=uep_data_br %>%
+  select(year, period, value)
+
+names(uepr)=c("year","period","uep_value")
+#unique(uepr$year)
+
+#merging cpi and uep
+
+cpi_uep= cpir %>%
+  inner_join(uepr, by= c("year", "period"))
+
+#any(is.na(cpi_uep))
+
+#unique(cpi_uep$year)
+
+#processing FED Dataset
+
+#fed_funds_rate
+#names(fed_funds_rate)
+#str(fed_funds_rate$date)
+
+fed_raw= fed_funds_rate %>%
+  select(date,value) %>%
+  mutate(year= str_sub(as.character(date),1,4),
+         month=str_sub(as.character(date),6,7)) 
+  
+fedr= fed_raw %>%
+  mutate(period = paste0("M", month)) %>%
+  select(year, period, value) %>%
+  filter(as.integer(year)>=1998)
+
+names(fedr)=c("year","period","fedr_value")
+
+cpi_uep_fed=cpi_uep %>% 
+  inner_join(fedr, by= c("year", "period"))
+
+#write.csv(cpi_uep_fed, "cpi_uep_fed_clean.csv")
+```
+
+### Data Exploration and Analysis
+
+After combining all data points, I displayed basic summary statistics per column to use as reference to guide me in the building of the visualizations.
+
+```{r}
+
+cpi_uep_fed = cpi_uep_fed %>%
+  arrange(year, period)
+
+cpi_uep_fed$uep_value=as.numeric(cpi_uep_fed$uep_value)
+
+summary(cpi_uep_fed)
+
+cpi_uep_fed = cpi_uep_fed %>%
+  mutate(month=row_number())
+```
+
+#### Data Visualizations
+
+##### Line Plot of FED Rate, Unemployment Rate, and Consumer Price Index
+
+First, I wanted to visualize all three columns together: The CPI, FEDR, and Unemployment Rate.
+
+To do that, the idea was to visualize each of these over time (months). I created a line graph using `ggplot2` package. The x-axis is the number of months. The y-axis on the left hand side represents the rate %. Both Unemployment rate and FED Rate use this axis for measurement. The y-axis on the right hand side is for the CPI. I could not figure out a way to indicate which line uses which axis (realized that could be confusing).
+
+```{r}
+ggplot(data = cpi_uep_fed) + 
+  geom_line(aes(x = month, y = uep_value, color = "Unemployment Rate")) + 
+  geom_line(aes(x = month, y = fedr_value, color = "Fed Rate")) +
+  geom_line(aes(x = month, y = cpi_value / 10, color = "Consumer Price Index")) +
+  scale_y_continuous(
+    name = "Rate",
+    sec.axis = sec_axis(~. * 10, name = "Consumer Price Index")
+  ) +
+  labs(title = "Monthly Rates and CPI", x = "Month") +
+  theme_minimal() +
+  scale_color_manual(values = c("Unemployment Rate" = "blue", "Fed Rate" = "red", "Consumer Price Index" = "darkgreen"))
+```
+
+The graph shows a steadily increasing CPI. CPI seams to steadily increase without any fluctuations and it is linear.
+
+Fed Rate and Unemployment rate exhibit a pattern; almost double helix in nature. Each has a wave-like pattern. It seams like the Fed rate drops right before increases in unemployment.
+
+This next graph is showing the same information but without the CPI line.
+
+```{r}
+ggplot(data = cpi_uep_fed) + 
+  geom_line(aes(x = month, y = uep_value, color = "Unemployment Rate")) + 
+  geom_line(aes(x = month, y = fedr_value, color = "Fed Rate")) +
+  scale_y_continuous(name = "Rate") +
+  labs(title = "Monthly Unemployment Rate and Fed Rate", x = "Month") +
+  theme_minimal() +
+  scale_color_manual(values = c("Unemployment Rate" = "red", "Fed Rate" = "blue"))
+
+```
+
+In addition to the above mentioned relationships, it seems like the Fed rate is risen once the unemployment rate starts decreasing.
+
+##### Scatter plot of FED Rate vs CPI
+
+Next, I wanted to visualize the relationship between the FED Rate and CPI. To do this, I plotted a scatter plot.
+
+```{r}
+ggplot(data = cpi_uep_fed, aes(x = cpi_value  , y = fedr_value)) + 
+  geom_point() + 
+  labs(
+    title = "Scatterplot of Fed Rate vs. CPI",
+    x = "Consumer Price Index (CPI)",
+    y = "Fed Rate"
+  ) +
+  theme_minimal()
+```
+
+The results of the scatter plot shows no linearity/ no linear relationship. There is a wave like pattern. It seems like these two variables are not correlated with one another.
+
+I wanted to visualize this differently so I also plotted a scatter plot of log CPI and log Fed rate.
+
+```{r}
+
+lcpi=log(cpi_uep_fed$cpi_value)
+lfr=log(cpi_uep_fed$fedr_value)
+
+ggplot(data = cpi_uep_fed, aes(x = lcpi, y = lfr)) + 
+  geom_point() + 
+  labs(
+    title = "Scatterplot of Fed Rate vs. CPI",
+    x = "Consumer Price Index (CPI)",
+    y = "Fed Rate"
+  ) +
+  theme_minimal()
+```
+
+The relationship was still wavelike/ not linear or showing a clear pattern. From the previous line graphs, it seems like the CPI is rising independently of whatever the Fed rate or Unemployment rate is.
+
+##### Unemployment vs FED Rate
+
+Next, I wanted to visualize the relationship between unemployment rate and the fed rate. To do that, I also plotted a scatter plot.
+
+```{r}
+ggplot(data = cpi_uep_fed, aes(x = fedr_value , y = uep_value)) + 
+  geom_point() + 
+  labs(
+    title = "Scatterplot of Unemployment Rate vs. Fed Rate",
+    x = "Fed Rate",
+    y = "Unemployment Rate"
+  ) +
+  theme_minimal()
+```
+
+There is fanning of the data, with more spread/ higher unemployment rates when the fed rate is lower. As the fed rate increases, unemployment rate seems to stay within a stable range. The FED might be doing their job after all since when unemployment is high it seems they lower their rates.
+
+I wanted to visualize the log of this data to see how it would look like but I would not be analyzing it as I do not think it adds anything.
+
+```{r}
+
+lfr=log(cpi_uep_fed$fedr_value)
+lupe=log(cpi_uep_fed$uep_value)
+
+ggplot(data = cpi_uep_fed, aes(x = lfr , y = lupe)) + 
+  geom_point() + 
+  labs(
+    title = "Scatterplot of  Log Unemployment Rate vs. Log Fed Rate",
+    x = "Log Fed Rate",
+    y = "Log Unemployment Rate"
+  ) +
+  theme_minimal()
+```
+
+##### FED Rate vs Unemployment
+
+I wanted to plot the same above data but flipping the axis to see if we can see this relationship between the Fed Rate and Unemployment Rate better.
+
+```{r}
+ggplot(data = cpi_uep_fed, aes(x = uep_value , y = fedr_value)) + 
+  geom_point() + 
+  labs(
+    title = "Scatterplot of Fed Rate vs. Unemployment Rate",
+    x = "Unemployment Rate",
+    y = "Fed Rate"
+  ) +
+  theme_minimal()
+```
+
+You can kind of see this relationship better here. As the Unemployment Rate increases, the Fed rate converges to Zero; meaning the Fed Rate decreases as Unemployment Rate increases.
+
+Similar to above, I wanted to visualize the log of this data to see how it would look like but I would not be analyzing it as I do not think it adds anything.
+
+```{r}
+ggplot(data = cpi_uep_fed, aes(x = lupe  , y = lfr)) + 
+  geom_point() + 
+  labs(
+    title = "Scatterplot of  Log Fed Rate vs. Log Unemployment Rate",
+    x = "Log Unemployment Rate",
+    y = "Log Fed Rate"
+  ) +
+  theme_minimal()
+```
+
+##### Percent Change Unemployment and FED Rate
+
+Now that we know that the Feds change the Fed Rate in response to unemployment rate changing, I wanted to know if this change was equal in each situation of high unemployment.
+
+To do that, I calculated the percent change of the Fed Rate and Unemployment rate and plotted that on a line graph.
+
+```{r}
+cpi_uep_fed2 = cpi_uep_fed %>%
+  mutate(
+    fedr_pct_change = (fedr_value - lag(fedr_value)) / lag(fedr_value) * 100,
+    uep_pct_change = (uep_value - lag(uep_value)) / lag(uep_value) * 100
+  )
+
+
+cpi_uep_fed2 = cpi_uep_fed2 %>%
+  filter(!is.na(fedr_pct_change) & !is.na(uep_pct_change))
+
+ggplot(cpi_uep_fed2, aes(x = month)) +
+  geom_line(aes(y = fedr_pct_change, color = "Fed Rate Percent Change")) +
+  geom_line(aes(y = uep_pct_change, color = "Unemployment Rate Percent Change")) +
+  labs(
+    title = "Percent Change in Fed Rate and Unemployment Rate Over Time",
+    x = "Month",
+    y = "Percent Change"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("Fed Rate Percent Change" = "blue", "Unemployment Rate Percent Change" = "red"))
+
+```
+
+As you can see from this line graph, the unemployment rate maintains a consistent range that is small.
+
+As time goes on however, the Fed Rate percent change increases and becomes more extreme. I believe that this is happening so to counteract the effects of increasing inflation (as we saw, as time increased, CPI also increased steadily).
+
+##### Top 20 Months with Greatest % difference of Rates
+
+Next, I wanted to figure out which months had the biggest difference in percent change between the unemployment rate and the Fed rate. To do this, I calculated the area between the two curves. Then, I plotted the top 20 months.
+
+```{r}
+
+cpi_uep_fed2$abs_diff = abs(cpi_uep_fed2$fedr_pct_change - cpi_uep_fed2$uep_pct_change)
+
+monthly_diff = cpi_uep_fed2 %>%
+  group_by(month) %>%
+  summarise(total_diff = sum(abs_diff)) 
+
+significant_diff_months = monthly_diff %>%
+  filter(total_diff >= 50) %>%
+  arrange(desc(total_diff))
+
+#print(significant_diff_months)
+
+
+
+monthly_diff_ordered = monthly_diff %>%
+  arrange(desc(total_diff))
+
+
+top_20 = head(monthly_diff_ordered, 20)
+
+ggplot(top_20, aes(x = reorder(as.factor(month), total_diff), y = total_diff)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +  
+  labs(
+    title = "Top 20 Months by Total Difference in Percent Change",
+    x = "Month Number",
+    y = "Total Difference in Percent Change"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_text(angle = 0, hjust = 1)) 
+
+```
+
+Month 324 had the biggest difference in percent change between the two rates. This month is the sharp peak in the previous graph.
+
+#### Calculating and Evaluating Inflation
+
+After reading and learning a bit more about CPI, I learned that with CPI you can calculate the inflation rate. To do this, I used the first month as the reference point and calculated the inflation rates of all months. I plotted this data on a line graph with the unemployment and also Fed rate.
+
+```{r}
+
+infla = cpi_uep_fed %>%
+  arrange(month) %>%
+  mutate(inflation_rate = (cpi_value - lag(cpi_value)) / lag(cpi_value) * 100)
+
+
+ggplot(data = infla) + 
+  geom_line(aes(x = month, y = uep_value, color = "Unemployment Rate")) + 
+  geom_line(aes(x = month, y = fedr_value, color = "Fed Rate")) +
+  geom_line(aes(x = month, y = inflation_rate, color = "Inflation Rate")) + #
+  scale_y_continuous(name = "Rate", sec.axis = sec_axis(~ ., name = "Inflation Rate (%)")) + 
+  labs(title = "Monthly Unemployment Rate, Fed Rate, and Inflation Rate", x = "Month") +
+  theme_minimal() +
+  scale_color_manual(values = c("Unemployment Rate" = "red", "Fed Rate" = "blue", "Inflation Rate" = "green")) 
+```
+
+Inflation rate seems to stay the same (stagnant). While the CPI is increasing and prices are getting more expensive, the rate of that CPI increasing is the same now as it was 25 years ago. In other words, Inflation rate over time has been steady, so you can say that the Fed has done a good job keeping inflation under control.
+
+## Conclusion
+
+To answer the question if the Fed fulfills its mandate from congress, comes down to simple definition. The job of the federal reserve is to (1) control inflation and (2) maintain low unemployment.
+
+The Federal reserve has been achieving (2) maintaining a low unemployment. Each time the unemployment rate reaches a relative minima, the feds decrease the fed rate in response. They start to increase it once unemployment decreases and stabilizes to normal range.
+
+To keep inflation under control (1), the Feds seem to change their rate with greater percent change as time/ inflation increased. These greater increases in percent change possibly help maintain this steady / stagnant inflation rate. Since the CPI is rising linearly and in a predictable way, we can say that the fed is indeed fulfilling this part of the mandate.
+
+In conclusion, I believe that the Fed is fulfilling their part of the dual mandate imposed by congress.
+
+## Sources
+
+[Bureau of Labor Statistics, U.S. Department of Labor](bls.gov)
+
+[Federal Reserve Bank of New York, Effective Federal Funds Rate [EFFR], retrieved from FRED, Federal Reserve Bank of St. Louis](https://fred.stlouisfed.org/series/FEDFUNDS)
